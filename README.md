@@ -121,7 +121,7 @@ GENERATOR_RATE_PER_SEC=100
 
 ANALYTICS_PG_DSN=postgresql://analytics:analytics@postgres-analytics:5432/analyticsdb
 
-AIRFLOW_FERNET_KEY=ne7SbTNRFM2nhJUH9tsSDHQXV7WHrvSpTnzLwS0YtLI=
+AIRFLOW_FERNET_KEY=ne7SbTNREThJUH9tsSDHQAFSV7WHrvSpTnzLwS0YtLI=
 AIRFLOW_PG_DSN=postgresql://analytics:analytics@postgres-analytics:5432/airflowdb
 
 AWS_EC2_METADATA_DISABLED=true

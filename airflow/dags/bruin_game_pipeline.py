@@ -6,8 +6,9 @@ from airflow.operators.bash import BashOperator
 
 DEFAULT_ARGS = {
     "owner": "data-eng",
-    "retries": 3,
-    "retry_delay": timedelta(seconds=30),
+    "retries": 2,
+    "retry_delay": timedelta(seconds=20),
+    "execution_timeout": timedelta(minutes=2),
 }
 
 BRUIN_EXEC = "docker exec bruin bruin run {asset}"
@@ -18,6 +19,8 @@ with DAG(
     start_date=datetime(2026, 1, 1),
     schedule_interval="* * * * *",
     catchup=False,
+    max_active_runs=1,
+    dagrun_timeout=timedelta(minutes=3),
     default_args=DEFAULT_ARGS,
     tags=["bruin", "ingest"],
 ) as dag_raw:
@@ -35,6 +38,8 @@ with DAG(
     start_date=datetime(2026, 1, 1),
     schedule_interval="*/3 * * * *",
     catchup=False,
+    max_active_runs=1,
+    dagrun_timeout=timedelta(minutes=8),
     default_args=DEFAULT_ARGS,
     tags=["bruin", "staging", "marts"],
 ) as dag_batch:

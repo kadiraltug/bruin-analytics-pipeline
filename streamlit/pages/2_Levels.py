@@ -15,16 +15,34 @@ if funnel.empty:
     st.info("Waiting for level data...")
     st.stop()
 
+ALL_DATES = "All dates (aggregate)"
 available_dates = sorted(funnel["event_date"].unique())
-selected_date = st.selectbox(
-    "Date", available_dates, index=len(available_dates) - 1
-)
-day = funnel[funnel["event_date"] == selected_date].sort_values("level")
+options = [ALL_DATES] + list(available_dates)
+selected = st.selectbox("Date", options, index=0)
+
+if selected == ALL_DATES:
+    day = (
+        funnel
+        .groupby("level", as_index=False)
+        .agg(
+            level_start_users=("level_start_users", "sum"),
+            level_complete_users=("level_complete_users", "sum"),
+            win_users=("win_users", "sum"),
+            fail_users=("fail_users", "sum"),
+        )
+    )
+    day["completion_rate"] = day["level_complete_users"] / day["level_start_users"].replace(0, float("nan"))
+    day["win_rate"] = day["win_users"] / (day["win_users"] + day["fail_users"]).replace(0, float("nan"))
+    day = day.fillna(0).sort_values("level")
+    label = "All dates"
+else:
+    day = funnel[funnel["event_date"] == selected].sort_values("level")
+    label = str(selected)
 
 c1, c2 = st.columns([2, 1])
 
 with c1:
-    st.subheader(f"User Drop-off ({selected_date})")
+    st.subheader(f"User Drop-off ({label})")
     fig = px.bar(
         day, x="level",
         y=["level_start_users", "level_complete_users"],
@@ -68,7 +86,7 @@ if not pivot.empty:
     st.plotly_chart(fig, use_container_width=True)
 
 st.divider()
-st.subheader(f"Win vs Fail ({selected_date})")
+st.subheader(f"Win vs Fail ({label})")
 
 c3, c4 = st.columns(2)
 with c3:
