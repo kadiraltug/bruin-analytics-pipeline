@@ -1,0 +1,7 @@
+bruin/.bruin.yml
+bruin/logs/
+__pycache__/
+*.py[cod]
+.env
+airflow/logs/
+do.txt

@@ -1,0 +1,23 @@
+default_environment: default
+environments:
+  default:
+    connections:
+      kafka:
+        - name: kafka-default
+          bootstrap_servers: "<KAFKA_BOOTSTRAP_SERVERS>"
+          group_id: "<KAFKA_GROUP_ID>"
+
+      postgres:
+        - name: pg-dest
+          host: "<POSTGRES_APP_HOST>"
+          port: 5432
+          database: "<POSTGRES_APP_DB>"
+          username: "<POSTGRES_APP_USER>"
+          password: "<POSTGRES_APP_PASSWORD>"
+
+        - name: pg-analytics-dest
+          host: "<POSTGRES_ANALYTICS_HOST>"
+          port: 5432
+          database: "<POSTGRES_ANALYTICS_DB>"
+          username: "<POSTGRES_ANALYTICS_USER>"
+          password: "<POSTGRES_ANALYTICS_PASSWORD>"

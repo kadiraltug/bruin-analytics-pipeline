@@ -1,0 +1,8 @@
+name: ingest.game_events_raw
+type: ingestr
+connection: pg-dest
+
+parameters:
+  source_connection: kafka-default
+  source_table: 'game_events'
+  destination: postgres

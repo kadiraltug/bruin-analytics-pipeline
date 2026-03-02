@@ -1,0 +1,216 @@
+services:
+  postgres:
+    container_name: postgres
+    image: postgres:16
+    networks:
+      - bruin_net
+    environment:
+      POSTGRES_USER: ${POSTGRES_APP_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_APP_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_APP_DB}
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+      - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U app -d appdb"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  postgres-analytics:
+    container_name: postgres-analytics
+    image: postgres:16
+    networks:
+      - bruin_net
+    environment:
+      POSTGRES_USER: ${POSTGRES_ANALYTICS_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_ANALYTICS_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_ANALYTICS_DB}
+    ports:
+      - "5433:5432"
+    volumes:
+      - ./postgres_analytics/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+      - pg_analytics_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U analytics -d analyticsdb"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  kafka:
+    image: confluentinc/cp-kafka:8.1.1
+    networks:
+      - bruin_net
+    hostname: kafka
+    container_name: kafka
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://0.0.0.0:9092,CONTROLLER://kafka:29093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:29093
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-broker-api-versions --bootstrap-server kafka:29092 > /dev/null 2>&1"]
+      interval: 10s
+      timeout: 10s
+      retries: 15
+
+  bruin:
+    container_name: bruin
+    build:
+      context: ./bruin
+    networks:
+      - bruin_net
+    depends_on:
+      kafka:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      postgres-analytics:
+        condition: service_healthy
+    environment:
+      BRUIN_CONFIG: .bruin.yml
+      RAW_SOURCE_PG_DSN: ${RAW_SOURCE_PG_DSN}
+      RAW_SOURCE_PG_TABLE: ${RAW_SOURCE_PG_TABLE}
+      RAW_DEST_PG_DSN: ${RAW_DEST_PG_DSN}
+      RAW_LOOKBACK_MS: "${RAW_LOOKBACK_MS}"
+      RAW_ASSET_KEY: ${RAW_ASSET_KEY}
+      STAGING_DEST_PG_DSN: ${STAGING_DEST_PG_DSN}
+      STAGING_SOURCE_TABLE: ${STAGING_SOURCE_TABLE}
+      STAGING_ASSET_KEY: ${STAGING_ASSET_KEY}
+      STAGING_LOOKBACK_MS: "${STAGING_LOOKBACK_MS}"
+      STATE_TABLE: ${STATE_TABLE}
+      AWS_EC2_METADATA_DISABLED: "${AWS_EC2_METADATA_DISABLED}"
+      UV_HTTP_TIMEOUT: "${UV_HTTP_TIMEOUT}"
+    volumes:
+      - ./bruin/bruin-pipeline:/workspace/bruin-pipeline
+
+  generator:
+    container_name: fake-data-generator
+    build:
+      context: ./generator
+    networks:
+      - bruin_net
+    depends_on:
+      kafka:
+        condition: service_healthy
+    environment:
+      BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS}
+      TOPIC: ${KAFKA_TOPIC}
+      RATE_PER_SEC: "${GENERATOR_RATE_PER_SEC}"
+    restart: unless-stopped
+
+  streamlit:
+    container_name: streamlit
+    build:
+      context: ./streamlit
+    networks:
+      - bruin_net
+    depends_on:
+      - postgres-analytics
+    environment:
+      ANALYTICS_PG_DSN: ${ANALYTICS_PG_DSN}
+    ports:
+      - "8501:8501"
+    volumes:
+      - ./streamlit:/app
+
+  airflow-init:
+    build:
+      context: ./airflow
+    container_name: airflow-init
+    networks:
+      - bruin_net
+    depends_on:
+      postgres-analytics:
+        condition: service_healthy
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: ${AIRFLOW_PG_DSN}
+      AIRFLOW__CORE__FERNET_KEY: "${AIRFLOW_FERNET_KEY}"
+      AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "false"
+    volumes:
+      - ./airflow/dags:/opt/airflow/dags
+      - ./airflow/logs:/opt/airflow/logs
+    entrypoint: /bin/bash
+    command: -c "
+      airflow db migrate &&
+      airflow users create
+        --username admin
+        --password admin
+        --firstname admin
+        --lastname admin
+        --role Admin
+        --email admin@example.com || true"
+    restart: "no"
+
+  airflow-webserver:
+    build:
+      context: ./airflow
+    container_name: airflow-webserver
+    networks:
+      - bruin_net
+    depends_on:
+      postgres-analytics:
+        condition: service_healthy
+      airflow-init:
+        condition: service_completed_successfully
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: ${AIRFLOW_PG_DSN}
+      AIRFLOW__CORE__FERNET_KEY: "${AIRFLOW_FERNET_KEY}"
+      AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "false"
+    volumes:
+      - ./airflow/dags:/opt/airflow/dags
+      - ./airflow/logs:/opt/airflow/logs
+      - /var/run/docker.sock:/var/run/docker.sock
+    command: webserver
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+
+  airflow-scheduler:
+    build:
+      context: ./airflow
+    container_name: airflow-scheduler
+    networks:
+      - bruin_net
+    depends_on:
+      postgres-analytics:
+        condition: service_healthy
+      airflow-init:
+        condition: service_completed_successfully
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: ${AIRFLOW_PG_DSN}
+      AIRFLOW__CORE__FERNET_KEY: "${AIRFLOW_FERNET_KEY}"
+      AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "false"
+    volumes:
+      - ./airflow/dags:/opt/airflow/dags
+      - ./airflow/logs:/opt/airflow/logs
+      - /var/run/docker.sock:/var/run/docker.sock
+    command: scheduler
+    restart: unless-stopped
+
+networks:
+  bruin_net:
+    name: bruin_net
+
+volumes:
+  pg_data:
+  pg_analytics_data:

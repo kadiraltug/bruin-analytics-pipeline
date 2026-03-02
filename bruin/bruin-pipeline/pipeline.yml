@@ -1,0 +1,5 @@
+name: bruin-pipeline
+default_connections:
+  postgres: pg-dest
+  kafka: kafka-default
+  pg-analytics: pg-analytics-dest
