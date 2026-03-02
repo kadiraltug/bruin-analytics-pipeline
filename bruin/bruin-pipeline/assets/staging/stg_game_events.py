@@ -70,10 +70,7 @@ from utils.watermark import (
 
 
 def _to_utc_naive_ts(s: pd.Series) -> pd.Series:
-    """
-    Normalize timestamps to UTC, tz-naive, microsecond precision
-    (safe for Arrow/ingestr and Postgres timestamp columns).
-    """
+
     if pd.api.types.is_numeric_dtype(s):
         dt = pd.to_datetime(s, unit="ms", utc=True, errors="coerce")
     else:
