@@ -26,11 +26,13 @@ churn_sorted = churn.sort_values("event_date")
 
 cols = st.columns(4)
 
-val, d = delta_str(churn_sorted["d7_churn_pct"].fillna(0))
-cols[0].metric("D7 Churn Rate", f"{val:.1f}%", delta=d, delta_color="inverse")
+d1_mature = churn_sorted["d1_churn_pct"].dropna()
+val, d = delta_str(d1_mature) if len(d1_mature) >= 1 else (0, None)
+cols[0].metric("D1 Churn Rate", f"{val:.1f}%", delta=d, delta_color="inverse")
 
-val, d = delta_str(churn_sorted["d1_churn_pct"].fillna(0))
-cols[1].metric("D1 Churn Rate", f"{val:.1f}%", delta=d, delta_color="inverse")
+d7_mature = churn_sorted["d7_churn_pct"].dropna()
+val, d = delta_str(d7_mature) if len(d7_mature) >= 1 else (0, None)
+cols[1].metric("D7 Churn Rate", f"{val:.1f}%", delta=d, delta_color="inverse")
 
 latest = churn_sorted.iloc[-1]
 cols[2].metric("Installs (Latest Cohort)", f"{int(latest['installs']):,}")
@@ -145,20 +147,22 @@ with c4:
     st.subheader("Churn % by Platform & Country (7D Rolling)")
     segments = load_churn_by_segment()
     if not segments.empty:
+        seg = segments.copy()
+        seg["label"] = seg["platform"] + " / " + seg["country"]
+        seg = seg.sort_values("churn_pct", ascending=True)
         fig = px.bar(
-            segments.sort_values("churn_pct", ascending=True),
+            seg,
             x="churn_pct",
-            y=segments.apply(
-                lambda r: f"{r['platform']} / {r['country']}", axis=1
-            ),
+            y="label",
             orientation="h",
-            labels={"x": "Churn %", "y": ""},
+            labels={"churn_pct": "Churn %", "label": ""},
             color="platform",
             color_discrete_map={"ios": "#636EFA", "android": "#00CC96"},
         )
         fig.update_layout(
             margin=dict(t=10),
-            showlegend=False,
+            showlegend=True,
+            legend=dict(orientation="h", y=-0.15),
         )
         st.plotly_chart(fig, use_container_width=True)
     else:

@@ -15,10 +15,11 @@ SIM_START_ISO = os.getenv("SIM_START_ISO", "2026-01-01T00:00:00+00:00")
 INITIAL_USERS = int(os.getenv("INITIAL_USERS", "5000"))
 NEW_USERS_EVERY_SEC = int(os.getenv("NEW_USERS_EVERY_SEC", "3"))
 NEW_USERS_BATCH = int(os.getenv("NEW_USERS_BATCH", "50"))
-DAILY_CHURN_PROB = float(os.getenv("DAILY_CHURN_PROB", "0.002"))
+DAILY_CHURN_PROB = float(os.getenv("DAILY_CHURN_PROB", "0.003"))
 
-SESSION_START_PROB = 0.1
-SESSION_END_PROB = 0.04
+SESSION_START_PROB = 0.06
+SESSION_END_PROB = 0.03
+USERS_PER_TICK = int(os.getenv("USERS_PER_TICK", "8"))
 PURCHASE_PROB = 0.008
 AD_IMPRESSION_PROB = 0.15
 
@@ -173,12 +174,12 @@ def handle_user_action(u: User, idx: int) -> list[dict]:
         return events
 
     if u.active_level is None:
-        if random.random() < 0.3:
+        if random.random() < 0.5:
             u.active_level = u.level
             u.active_level_start_ts = ts_ms
             events.append(emit_event(u, "level_start", level=u.active_level))
     else:
-        if random.random() < 0.2:
+        if random.random() < 0.35:
             difficulty = min(0.4, u.active_level * 0.005)
             win_prob = max(0.1, min(0.9, u.skill - difficulty + 0.5))
             result = "win" if random.random() < win_prob else "fail"
@@ -240,7 +241,8 @@ while True:
         _last_compaction_at = time.time()
 
     if time.time() - _last_new_users_at >= NEW_USERS_EVERY_SEC:
-        for _ in range(NEW_USERS_BATCH):
+        batch = random.randint(max(1, NEW_USERS_BATCH - 5), NEW_USERS_BATCH + 5)
+        for _ in range(batch):
             u_new = new_user()
             users.append(u_new)
             new_idx = len(users) - 1
@@ -252,11 +254,12 @@ while True:
         time.sleep(1.0 / RATE)
         continue
 
-    u_idx = random.choice(list(active_user_set))
-    u = users[u_idx]
-
-    if u.is_active:
-        for ev in handle_user_action(u, u_idx):
-            produce(ev)
+    sample_size = min(USERS_PER_TICK, len(active_user_set))
+    sampled = random.sample(list(active_user_set), sample_size)
+    for u_idx in sampled:
+        u = users[u_idx]
+        if u.is_active:
+            for ev in handle_user_action(u, u_idx):
+                produce(ev)
 
     time.sleep(1.0 / RATE)
