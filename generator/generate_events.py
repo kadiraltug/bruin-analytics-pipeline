@@ -8,14 +8,14 @@ fake = Faker()
 
 BOOTSTRAP = os.getenv("BOOTSTRAP_SERVERS", "localhost:9092")
 TOPIC = os.getenv("TOPIC", "game_events")
-RATE = float(os.getenv("RATE_PER_SEC", "20"))
-SIM_SPEED_SECONDS = int(os.getenv("SIM_SPEED_SECONDS", str(60 * 5)))
+RATE = float(os.getenv("RATE_PER_SEC", "200"))
+SIM_SPEED_SECONDS = int(os.getenv("SIM_SPEED_SECONDS", str(60 * 30)))
 SIM_START_ISO = os.getenv("SIM_START_ISO", "2026-01-01T00:00:00+00:00")
 
-INITIAL_USERS = int(os.getenv("INITIAL_USERS", "2000"))
-NEW_USERS_EVERY_SEC = 5
-NEW_USERS_BATCH = 10
-DAILY_CHURN_PROB = 0.002
+INITIAL_USERS = int(os.getenv("INITIAL_USERS", "5000"))
+NEW_USERS_EVERY_SEC = int(os.getenv("NEW_USERS_EVERY_SEC", "3"))
+NEW_USERS_BATCH = int(os.getenv("NEW_USERS_BATCH", "50"))
+DAILY_CHURN_PROB = float(os.getenv("DAILY_CHURN_PROB", "0.002"))
 
 SESSION_START_PROB = 0.1
 SESSION_END_PROB = 0.04
