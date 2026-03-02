@@ -1,4 +1,3 @@
-"""Shared watermark state management for incremental Python assets."""
 
 import os
 

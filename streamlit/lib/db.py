@@ -172,7 +172,7 @@ def load_time_to_churn():
         JOIN last_seen ls ON i.user_id = ls.user_id
         CROSS JOIN max_date m
         WHERE ls.last_active_date >= i.install_date
-          AND ls.last_active_date <= m.latest - 7
+          AND ls.last_active_date < m.latest
         GROUP BY 1
         ORDER BY 1
     """)

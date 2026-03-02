@@ -24,19 +24,26 @@ st.divider()
 st.subheader("Watermarks (last processed timestamp)")
 
 if not watermarks.empty:
+    wm_values = []
+    for _, row in watermarks.iterrows():
+        wm_values.append(int(row["last_updated_at"]))
+
+    max_wm = max(wm_values) if wm_values else 0
     cols = st.columns(len(watermarks))
     for i, (_, row) in enumerate(watermarks.iterrows()):
         wm_ms = int(row["last_updated_at"])
         if wm_ms > 0:
             wm_dt = pd.to_datetime(wm_ms, unit="ms", utc=True)
-            age = pd.Timestamp.utcnow() - wm_dt
-            mins = int(age.total_seconds() // 60)
-            secs = int(age.total_seconds() % 60)
+            lag_sec = (max_wm - wm_ms) / 1000
+            if lag_sec < 60:
+                lag_str = "in sync"
+            else:
+                lag_str = f"{int(lag_sec // 60)}m behind"
             cols[i].metric(
                 row["asset_key"],
-                wm_dt.strftime("%Y-%m-%d %H:%M:%S UTC"),
-                delta=f"{mins}m {secs}s ago",
-                delta_color="off",
+                wm_dt.strftime("%Y-%m-%d %H:%M:%S"),
+                delta=lag_str,
+                delta_color="off" if lag_sec < 60 else "inverse",
             )
         else:
             cols[i].metric(row["asset_key"], "Not started yet")

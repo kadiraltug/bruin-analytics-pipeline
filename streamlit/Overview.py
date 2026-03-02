@@ -17,6 +17,9 @@ if kpis.empty:
     st.stop()
 
 kpis_sorted = kpis.sort_values("event_date")
+for col in ["iap_revenue_usd", "ad_revenue_usd", "total_revenue_usd", "arpdau", "arppu"]:
+    if col in kpis_sorted.columns:
+        kpis_sorted[col] = kpis_sorted[col].fillna(0).astype(float)
 
 cols = st.columns(6)
 
