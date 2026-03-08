@@ -52,4 +52,51 @@ CREATE TABLE IF NOT EXISTS meta.load_state (
   last_updated_at bigint NOT NULL DEFAULT 0
 );
 
+CREATE TABLE IF NOT EXISTS marts.daily_kpis (
+  event_date                date PRIMARY KEY,
+  dau                       bigint,
+  sessions                  bigint,
+  new_users                 bigint,
+  payers                    bigint,
+  iap_revenue_usd           numeric,
+  ad_revenue_usd            numeric,
+  total_revenue_usd         numeric,
+  arpdau                    numeric,
+  arppu                     numeric,
+  sessions_per_user         numeric,
+  avg_session_duration_sec  numeric
+);
+
+CREATE INDEX IF NOT EXISTS idx_marts_daily_kpis_event_date
+  ON marts.daily_kpis (event_date);
+
+CREATE TABLE IF NOT EXISTS marts.level_funnel_daily (
+  event_date           date,
+  level                integer,
+  level_start_users    bigint,
+  level_complete_users bigint,
+  win_users            bigint,
+  fail_users           bigint,
+  completion_rate      numeric,
+  win_rate             numeric,
+  PRIMARY KEY (event_date, level)
+);
+
+CREATE INDEX IF NOT EXISTS idx_marts_level_funnel_event_date
+  ON marts.level_funnel_daily (event_date);
+
+CREATE TABLE IF NOT EXISTS marts.churn_daily (
+  event_date     date PRIMARY KEY,
+  installs       bigint,
+  d1_active      bigint,
+  d1_churn_pct   numeric,
+  d7_active      bigint,
+  d7_churn_pct   numeric,
+  d30_active     bigint,
+  d30_churn_pct  numeric
+);
+
+CREATE INDEX IF NOT EXISTS idx_marts_churn_daily_event_date
+  ON marts.churn_daily (event_date);
+
 CREATE DATABASE airflowdb;

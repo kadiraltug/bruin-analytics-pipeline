@@ -5,22 +5,59 @@ connection: pg-analytics-dest
 
 materialization:
   type: table
-  strategy: create+replace
+  strategy: merge
 
 depends_on:
   - staging.game_events
+
+columns:
+  - name: event_date
+    type: date
+    primary_key: true
+    checks:
+      - name: not_null
+  - name: level
+    type: integer
+    primary_key: true
+    checks:
+      - name: positive
+  - name: level_start_users
+    type: bigint
+    checks:
+      - name: positive
+  - name: level_complete_users
+    type: bigint
+    checks:
+      - name: positive
+  - name: win_users
+    type: bigint
+    checks:
+      - name: positive
+  - name: fail_users
+    type: bigint
+    checks:
+      - name: positive
+  - name: completion_rate
+    type: numeric
+  - name: win_rate
+    type: numeric
 @bruin"""
 
-WITH lvl AS (
+WITH last_date AS (
+  SELECT COALESCE(MAX(event_date), '1900-01-01'::date) AS max_dt
+  FROM marts.level_funnel_daily
+),
+lvl AS (
   SELECT
-    event_date,
-    level,
-    event_name,
-    user_id,
-    result
-  FROM staging.game_events
-  WHERE event_name IN ('level_start', 'level_complete')
-    AND level IS NOT NULL
+    s.event_date,
+    s.level,
+    s.event_name,
+    s.user_id,
+    s.result
+  FROM staging.game_events s, last_date l
+  WHERE s.event_name IN ('level_start', 'level_complete')
+    AND s.level IS NOT NULL
+    AND s.event_date >= l.max_dt
 ),
 agg AS (
   SELECT

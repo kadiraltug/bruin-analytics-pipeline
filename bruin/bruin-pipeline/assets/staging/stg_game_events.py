@@ -54,6 +54,12 @@ columns:
     type: timestamp
 @bruin"""
 
+"""
+This asset takes raw.game_events from the analytics Postgres, cleans and
+normalizes the fields and incrementally upserts
+them into staging.game_events using an updated_at watermark.
+"""
+
 import os
 import sys
 
@@ -62,38 +68,41 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 import pandas as pd
 import psycopg2
 from utils.watermark import (
-    ensure_state_table,
-    get_last_watermark,
+    compute_query_watermark,
     get_required_env,
-    set_last_watermark,
+    update_watermark_from_series,
 )
 
 
+# Normalize timestamps to naive UTC, handling both numeric and datetime inputs.
 def _to_utc_naive_ts(s: pd.Series) -> pd.Series:
-
     if pd.api.types.is_numeric_dtype(s):
         dt = pd.to_datetime(s, unit="ms", utc=True, errors="coerce")
     else:
         dt = pd.to_datetime(s, utc=True, errors="coerce")
-
     dt = dt.dt.floor("us")
     return dt.dt.tz_convert(None)
 
 
-def materialize() -> pd.DataFrame:
+# Read staging connection and watermark settings from env vars.
+def _load_staging_config() -> dict:
     dest_dsn = get_required_env("STAGING_DEST_PG_DSN")
     source_table = get_required_env("STAGING_SOURCE_TABLE")
     state_table = get_required_env("STATE_TABLE")
     asset_key = get_required_env("STAGING_ASSET_KEY")
     lookback_ms = int(get_required_env("STAGING_LOOKBACK_MS"))
+    return {
+        "dest_dsn": dest_dsn,
+        "source_table": source_table,
+        "state_table": state_table,
+        "asset_key": asset_key,
+        "lookback_ms": lookback_ms,
+    }
 
-    with psycopg2.connect(dest_dsn) as conn:
-        ensure_state_table(conn, state_table)
-        last_wm = get_last_watermark(conn, state_table, asset_key)
 
-    wm_for_query = max(0, last_wm - lookback_ms)
-
-    select_sql = f"""
+# Build the SQL that pulls incremental rows from raw.game_events.
+def _build_staging_select_sql(source_table: str) -> str:
+    return f"""
         SELECT
             event_id,
             user_id,
@@ -115,12 +124,15 @@ def materialize() -> pd.DataFrame:
         ORDER BY updated_at
     """
 
+
+# Fetch one incremental batch for staging above the current watermark.
+def _fetch_staging_chunk(dest_dsn: str, select_sql: str, watermark: int) -> pd.DataFrame:
     with psycopg2.connect(dest_dsn) as conn:
-        df = pd.read_sql_query(select_sql, conn, params=[int(wm_for_query)])
+        return pd.read_sql_query(select_sql, conn, params=[int(watermark)])
 
-    if df.empty:
-        return df
 
+# Apply type fixes, string cleaning and basic validation for staging schema.
+def _clean_staging_frame(df: pd.DataFrame) -> pd.DataFrame:
     df = df.sort_values("updated_at").drop_duplicates("event_id", keep="last")
 
     if "event_ts" in df.columns:
@@ -129,42 +141,71 @@ def materialize() -> pd.DataFrame:
         df["updated_at"] = _to_utc_naive_ts(df["updated_at"])
 
     for col in [
-        "event_id", "user_id", "session_id", "event_name",
-        "platform", "country", "app_version", "device_model",
-        "result", "currency",
+        "event_id",
+        "user_id",
+        "session_id",
+        "event_name",
+        "platform",
+        "country",
+        "app_version",
+        "device_model",
+        "result",
+        "currency",
     ]:
         if col in df.columns:
             df[col] = df[col].astype("string")
 
-    cleaned = pd.DataFrame({
-        "event_id": df["event_id"],
-        "user_id": df["user_id"],
-        "session_id": df["session_id"],
-        "event_name": df["event_name"].str.strip().str.lower(),
-        "event_ts": df["event_ts"],
-        "platform": df["platform"].str.strip().str.lower(),
-        "country": df["country"].str.strip().str.upper(),
-        "app_version": df["app_version"].str.strip(),
-        "device_model": df["device_model"].str.strip(),
-        "level": df["level"],
-        "result": df["result"].str.strip().str.lower(),
-        "duration_sec": df["duration_sec"],
-        "revenue_usd": df["revenue_usd"].where(df["revenue_usd"] >= 0),
-        "currency": df["currency"].str.strip().str.upper(),
-        "event_date": df["event_ts"].dt.date,
-        "updated_at": df["updated_at"],
-    })
+    cleaned = pd.DataFrame(
+        {
+            "event_id": df["event_id"],
+            "user_id": df["user_id"],
+            "session_id": df["session_id"],
+            "event_name": df["event_name"].str.strip().str.lower(),
+            "event_ts": df["event_ts"],
+            "platform": df["platform"].str.strip().str.lower(),
+            "country": df["country"].str.strip().str.upper(),
+            "app_version": df["app_version"].str.strip(),
+            "device_model": df["device_model"].str.strip(),
+            "level": df["level"],
+            "result": df["result"].str.strip().str.lower(),
+            "duration_sec": df["duration_sec"],
+            "revenue_usd": df["revenue_usd"].where(df["revenue_usd"] >= 0),
+            "currency": df["currency"].str.strip().str.upper(),
+            "event_date": df["event_ts"].dt.date,
+            "updated_at": df["updated_at"],
+        }
+    )
 
     cleaned = cleaned[
         (cleaned["event_id"].notna())
         & (cleaned["user_id"].notna())
         & (cleaned["updated_at"].notna())
     ]
+    return cleaned
 
-    new_wm_ts = cleaned["updated_at"].max()
-    new_wm_ms = int(new_wm_ts.timestamp() * 1000)
 
-    with psycopg2.connect(dest_dsn) as conn:
-        set_last_watermark(conn, state_table, asset_key, new_wm_ms)
 
+def materialize() -> pd.DataFrame:
+    cfg = _load_staging_config()
+    wm_for_query = compute_query_watermark(
+        cfg["dest_dsn"],
+        state_table=cfg["state_table"],
+        asset_key=cfg["asset_key"],
+        lookback_ms=cfg["lookback_ms"],
+    )
+
+    select_sql = _build_staging_select_sql(cfg["source_table"])
+    df = _fetch_staging_chunk(cfg["dest_dsn"], select_sql, wm_for_query)
+    if df.empty:
+        return df
+
+    cleaned = _clean_staging_frame(df)
+    if not cleaned.empty:
+        update_watermark_from_series(
+            cfg["dest_dsn"],
+            cfg["state_table"],
+            cfg["asset_key"],
+            cleaned["updated_at"],
+            timestamp_ms=True,
+        )
     return cleaned

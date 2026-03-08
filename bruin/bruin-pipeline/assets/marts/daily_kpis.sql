@@ -5,21 +5,69 @@ connection: pg-analytics-dest
 
 materialization:
   type: table
-  strategy: create+replace
+  strategy: merge
 
 depends_on:
   - staging.game_events
+
+columns:
+  - name: event_date
+    type: date
+    primary_key: true
+    checks:
+      - name: not_null
+  - name: dau
+    type: bigint
+    checks:
+      - name: positive
+  - name: sessions
+    type: bigint
+    checks:
+      - name: positive
+  - name: new_users
+    type: bigint
+    checks:
+      - name: positive
+  - name: payers
+    type: bigint
+    checks:
+      - name: positive
+  - name: iap_revenue_usd
+    type: numeric
+    checks:
+      - name: positive
+  - name: ad_revenue_usd
+    type: numeric
+    checks:
+      - name: positive
+  - name: total_revenue_usd
+    type: numeric
+    checks:
+      - name: positive
+  - name: arpdau
+    type: numeric
+  - name: arppu
+    type: numeric
+  - name: sessions_per_user
+    type: numeric
+  - name: avg_session_duration_sec
+    type: numeric
 @bruin"""
 
-WITH base AS (
+WITH last_date AS (
+  SELECT COALESCE(MAX(event_date), '1900-01-01'::date) AS max_dt
+  FROM marts.daily_kpis
+),
+base AS (
   SELECT
-    event_date,
-    user_id,
-    session_id,
-    event_name,
-    revenue_usd,
-    duration_sec
-  FROM staging.game_events
+    s.event_date,
+    s.user_id,
+    s.session_id,
+    s.event_name,
+    s.revenue_usd,
+    s.duration_sec
+  FROM staging.game_events s, last_date l
+  WHERE s.event_date >= l.max_dt
 ),
 agg AS (
   SELECT

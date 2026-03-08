@@ -5,18 +5,46 @@ connection: pg-analytics-dest
 
 materialization:
   type: table
-  strategy: create+replace
+  strategy: merge
 
 depends_on:
   - staging.game_events
+
+columns:
+  - name: event_date
+    type: date
+    primary_key: true
+    checks:
+      - name: not_null
+  - name: installs
+    type: bigint
+    checks:
+      - name: positive
+  - name: d1_active
+    type: bigint
+  - name: d1_churn_pct
+    type: numeric
+  - name: d7_active
+    type: bigint
+  - name: d7_churn_pct
+    type: numeric
+  - name: d30_active
+    type: bigint
+  - name: d30_churn_pct
+    type: numeric
 @bruin"""
 
-WITH installs AS (
+WITH last_date AS (
+  SELECT COALESCE(MAX(event_date), '1900-01-01'::date) AS max_dt
+  FROM marts.churn_daily
+),
+installs AS (
   SELECT
     user_id,
     MIN(event_date::date) AS install_date
-  FROM staging.game_events
+  FROM staging.game_events, last_date l
   WHERE event_name = 'user_register'
+    AND event_date::date >= l.max_dt
   GROUP BY 1
 ),
 activity AS (
