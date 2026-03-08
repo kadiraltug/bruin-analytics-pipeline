@@ -241,15 +241,18 @@ def load_revenue_by_segment():
 @st.cache_data(ttl=25)
 def load_pipeline_health():
     counts = query("""
-        SELECT 'raw.game_events' AS tbl, COUNT(*) AS rows FROM raw.game_events
-        UNION ALL
-        SELECT 'staging.game_events', COUNT(*) FROM staging.game_events
-        UNION ALL
-        SELECT 'marts.daily_kpis', COUNT(*) FROM marts.daily_kpis
-        UNION ALL
-        SELECT 'marts.level_funnel_daily', COUNT(*) FROM marts.level_funnel_daily
-        UNION ALL
-        SELECT 'marts.churn_daily', COUNT(*) FROM marts.churn_daily
+        WITH t AS (
+            SELECT 1 AS pos, 'raw.game_events' AS tbl, COUNT(*) AS rows FROM raw.game_events
+            UNION ALL
+            SELECT 2, 'staging.game_events', COUNT(*) FROM staging.game_events
+            UNION ALL
+            SELECT 3, 'marts.daily_kpis', COUNT(*) FROM marts.daily_kpis
+            UNION ALL
+            SELECT 4, 'marts.level_funnel_daily', COUNT(*) FROM marts.level_funnel_daily
+            UNION ALL
+            SELECT 5, 'marts.churn_daily', COUNT(*) FROM marts.churn_daily
+        )
+        SELECT tbl, rows FROM t ORDER BY pos
     """)
     watermarks = query("SELECT * FROM meta.load_state ORDER BY asset_key")
     events = query("""
