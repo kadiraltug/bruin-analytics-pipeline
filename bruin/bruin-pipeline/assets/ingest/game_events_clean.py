@@ -9,7 +9,8 @@ materialization:
   strategy: merge
   parameters:
     enforce_schema: true
-
+depends:
+  - ingest.game_events_raw
 columns:
   - name: event_id
     type: string

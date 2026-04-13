@@ -7,7 +7,7 @@ materialization:
   type: table
   strategy: merge
 
-depends_on:
+depends:
   - staging.game_events
 
 columns:

@@ -10,7 +10,7 @@ materialization:
   parameters:
     enforce_schema: true
 
-depends_on:
+depends:
   - raw.game_events
 
 columns:
