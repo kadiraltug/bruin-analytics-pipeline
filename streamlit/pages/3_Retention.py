@@ -31,26 +31,6 @@ fig.update_layout(margin=dict(t=10))
 st.plotly_chart(fig, use_container_width=True)
 
 st.divider()
-st.subheader("Retention Heatmap (% active on Day N)")
-
-pivot = cohort.pivot_table(
-    index="cohort_date", columns="day_n", values="retention_pct",
-)
-if not pivot.empty:
-    pivot.columns = [f"D{int(c)}" for c in pivot.columns]
-    pivot.index = [str(d) for d in pivot.index]
-
-    fig = px.imshow(
-        pivot,
-        labels=dict(x="Day", y="Cohort", color="%"),
-        color_continuous_scale="Blues",
-        aspect="auto",
-        text_auto=".0f",
-    )
-    fig.update_layout(margin=dict(t=10), height=max(300, len(pivot) * 40))
-    st.plotly_chart(fig, use_container_width=True)
-
-st.divider()
 st.subheader("Retention Curves (last 5 cohorts)")
 
 recent_cohorts = sorted(cohort["cohort_date"].unique())[-5:]
