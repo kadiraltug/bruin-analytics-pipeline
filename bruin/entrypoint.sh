@@ -14,7 +14,7 @@ log "Starting continuous Kafka ingest loop (pause=${PAUSE}s, retries=${MAX_RETRI
 consecutive_failures=0
 
 while true; do
-  if bruin run bruin-pipeline/assets/ingest/kafka_to_pg.asset.yml >> /proc/1/fd/1 2>&1; then
+  if bruin run bruin-pipeline/assets/ingest/kafka_to_pg.asset.yml 2>&1; then
     consecutive_failures=0
   else
     consecutive_failures=$((consecutive_failures + 1))

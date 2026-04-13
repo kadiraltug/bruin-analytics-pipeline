@@ -99,4 +99,33 @@ CREATE TABLE IF NOT EXISTS marts.churn_daily (
 CREATE INDEX IF NOT EXISTS idx_marts_churn_daily_event_date
   ON marts.churn_daily (event_date);
 
+CREATE TABLE IF NOT EXISTS marts.cohort_retention (
+  cohort_date   date,
+  day_n         integer,
+  retained      bigint,
+  cohort_size   bigint,
+  retention_pct numeric,
+  PRIMARY KEY (cohort_date, day_n)
+);
+
+CREATE TABLE IF NOT EXISTS marts.churn_by_segment (
+  platform      text,
+  country       text,
+  total_users   bigint,
+  churned_users bigint,
+  churn_pct     numeric,
+  PRIMARY KEY (platform, country)
+);
+
+CREATE TABLE IF NOT EXISTS marts.time_to_churn (
+  days_to_churn integer PRIMARY KEY,
+  user_count    bigint
+);
+
+CREATE TABLE IF NOT EXISTS marts.rolling_churn_7d (
+  base_users    bigint,
+  churned_7d    bigint,
+  churn_rate_7d numeric
+);
+
 CREATE DATABASE airflowdb;

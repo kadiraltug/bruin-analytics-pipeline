@@ -1,19 +1,51 @@
 """
-This module contains utility functions for working with watermarks in the database.
+Watermark utilities.
+
+The target table itself is the source of truth: get_target_watermark()
+reads MAX(updated_at) from the output table.  If a batch was set but
+Bruin failed to write it, the MAX hasn't moved and the batch will be
+re-processed automatically.  No separate state verification is needed.
+
+meta.load_state is still written by update_watermark_for_dashboard()
+purely for the Streamlit Pipeline Health page.
 """
 
 import os
 import psycopg2
 
-# Get a required environment variable.
+
 def get_required_env(name: str) -> str:
     v = os.getenv(name)
     if not v:
         raise RuntimeError(f"{name} must be set")
     return v
 
-# Ensure the state table exists.
-def ensure_state_table(conn, state_table: str) -> None:
+
+def get_target_watermark(
+    dsn: str,
+    table: str,
+    column: str,
+    column_is_epoch_ms: bool = True,
+    lookback_ms: int = 0,
+) -> int:
+    try:
+        with psycopg2.connect(dsn) as conn:
+            with conn.cursor() as cur:
+                if column_is_epoch_ms:
+                    cur.execute(f"SELECT COALESCE(MAX({column}), 0) FROM {table}")
+                else:
+                    cur.execute(
+                        f"SELECT COALESCE(EXTRACT(EPOCH FROM MAX({column})) * 1000, 0) "
+                        f"FROM {table}"
+                    )
+                row = cur.fetchone()
+        wm = int(float(row[0])) if row and row[0] else 0
+    except Exception:
+        wm = 0
+    return max(0, wm - lookback_ms)
+
+
+def _ensure_state_table(conn, state_table: str) -> None:
     if "." in state_table:
         schema = state_table.split(".", 1)[0]
         with conn.cursor() as cur:
@@ -31,18 +63,8 @@ def ensure_state_table(conn, state_table: str) -> None:
         )
     conn.commit()
 
-# Get the last watermark for an asset.
-def get_last_watermark(conn, state_table: str, asset_key: str) -> int:
-    with conn.cursor() as cur:
-        cur.execute(
-            f"SELECT last_updated_at FROM {state_table} WHERE asset_key=%s",
-            (asset_key,),
-        )
-        row = cur.fetchone()
-    return int(row[0]) if row else 0
 
-# Set the last watermark for an asset.
-def set_last_watermark(
+def _set_dashboard_watermark(
     conn, state_table: str, asset_key: str, last_updated_at: int
 ) -> None:
     with conn.cursor() as cur:
@@ -58,17 +80,7 @@ def set_last_watermark(
     conn.commit()
 
 
-# Compute the watermark for a query based on the last watermark and lookback.
-def compute_query_watermark(
-    dsn: str, state_table: str, asset_key: str, lookback_ms: int
-) -> int:
-    with psycopg2.connect(dsn) as conn:
-        ensure_state_table(conn, state_table)
-        last_wm = get_last_watermark(conn, state_table, asset_key)
-    return max(0, last_wm - lookback_ms)
-
-# Update the watermark for an asset based on the max value in a series.
-def update_watermark_from_series(
+def update_watermark_for_dashboard(
     dsn: str,
     state_table: str,
     asset_key: str,
@@ -76,7 +88,6 @@ def update_watermark_from_series(
     *,
     timestamp_ms: bool,
 ) -> None:
-
     if values is None:
         return
     try:
@@ -92,4 +103,5 @@ def update_watermark_from_series(
         new_wm = int(latest)
 
     with psycopg2.connect(dsn) as conn:
-        set_last_watermark(conn, state_table, asset_key, new_wm)
+        _ensure_state_table(conn, state_table)
+        _set_dashboard_watermark(conn, state_table, asset_key, new_wm)

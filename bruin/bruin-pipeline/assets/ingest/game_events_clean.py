@@ -44,9 +44,10 @@ columns:
     type: bigint
 @bruin"""
 
-""" 
-This asset reads raw Kafka payloads from ingest.game_events_raw into raw.game_events
-on the analytics Postgres, using updated_at as a watermark stored in meta.load_state.
+"""
+Reads raw Kafka payloads from ingest.game_events_raw, parses JSON columns and
+writes them into raw.game_events on analytics Postgres.  The watermark is
+derived from MAX(updated_at) in the target table itself.
 """
 
 import os
@@ -57,9 +58,9 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 import pandas as pd
 import psycopg2
 from utils.watermark import (
-    compute_query_watermark,
     get_required_env,
-    update_watermark_from_series,
+    get_target_watermark,
+    update_watermark_for_dashboard,
 )
 
 
@@ -153,13 +154,14 @@ def _fetch_incremental_chunk(source_dsn: str, select_sql: str, watermark: int) -
         return pd.read_sql_query(select_sql, src_conn, params=[watermark])
 
 
-# Main entrypoint that Bruin calls to materialize raw.game_events incrementally.
 def materialize() -> pd.DataFrame:
     cfg = _load_raw_config()
-    wm_for_query = compute_query_watermark(
+
+    wm_for_query = get_target_watermark(
         cfg["dest_dsn"],
-        state_table=cfg["state_table"],
-        asset_key=cfg["asset_key"],
+        table="raw.game_events",
+        column="updated_at",
+        column_is_epoch_ms=True,
         lookback_ms=cfg["lookback_ms"],
     )
 
@@ -168,8 +170,9 @@ def materialize() -> pd.DataFrame:
 
     select_sql = _build_select_sql(cfg["source_table"])
     df = _fetch_incremental_chunk(cfg["source_dsn"], select_sql, wm_for_query)
+
     if not df.empty:
-        update_watermark_from_series(
+        update_watermark_for_dashboard(
             cfg["dest_dsn"],
             cfg["state_table"],
             cfg["asset_key"],

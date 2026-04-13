@@ -55,9 +55,8 @@ columns:
 @bruin"""
 
 """
-This asset takes raw.game_events from the analytics Postgres, cleans and
-normalizes the fields and incrementally upserts
-them into staging.game_events using an updated_at watermark.
+Cleans and normalizes raw.game_events, then upserts into staging.game_events.
+The watermark is derived from MAX(updated_at) in the target table itself.
 """
 
 import os
@@ -68,9 +67,9 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 import pandas as pd
 import psycopg2
 from utils.watermark import (
-    compute_query_watermark,
     get_required_env,
-    update_watermark_from_series,
+    get_target_watermark,
+    update_watermark_for_dashboard,
 )
 
 
@@ -187,10 +186,12 @@ def _clean_staging_frame(df: pd.DataFrame) -> pd.DataFrame:
 
 def materialize() -> pd.DataFrame:
     cfg = _load_staging_config()
-    wm_for_query = compute_query_watermark(
+
+    wm_for_query = get_target_watermark(
         cfg["dest_dsn"],
-        state_table=cfg["state_table"],
-        asset_key=cfg["asset_key"],
+        table="staging.game_events",
+        column="updated_at",
+        column_is_epoch_ms=False,
         lookback_ms=cfg["lookback_ms"],
     )
 
@@ -201,7 +202,7 @@ def materialize() -> pd.DataFrame:
 
     cleaned = _clean_staging_frame(df)
     if not cleaned.empty:
-        update_watermark_from_series(
+        update_watermark_for_dashboard(
             cfg["dest_dsn"],
             cfg["state_table"],
             cfg["asset_key"],

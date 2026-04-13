@@ -5,9 +5,10 @@ WORKDIR /workspace
 
 USER root
 COPY entrypoint.sh /entrypoint.sh
-RUN chown -R bruin:bruin /workspace
-RUN chmod +x /entrypoint.sh
-RUN git config --global safe.directory /workspace \
+RUN sed -i 's/\r$//' /entrypoint.sh \
+ && chmod +x /entrypoint.sh \
+ && chown -R bruin:bruin /workspace \
+ && git config --global safe.directory /workspace \
  && cd /workspace \
  && git init \
  && git add -A \

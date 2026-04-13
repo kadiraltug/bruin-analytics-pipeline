@@ -72,4 +72,40 @@ with DAG(
         ),
     )
 
-    stg_game_events >> [daily_kpis, level_funnel_daily, churn_daily]
+    cohort_retention = BashOperator(
+        task_id="cohort_retention",
+        bash_command=BRUIN_EXEC.format(
+            asset="bruin-pipeline/assets/marts/cohort_retention.sql"
+        ),
+    )
+
+    churn_by_segment = BashOperator(
+        task_id="churn_by_segment",
+        bash_command=BRUIN_EXEC.format(
+            asset="bruin-pipeline/assets/marts/churn_by_segment.sql"
+        ),
+    )
+
+    time_to_churn = BashOperator(
+        task_id="time_to_churn",
+        bash_command=BRUIN_EXEC.format(
+            asset="bruin-pipeline/assets/marts/time_to_churn.sql"
+        ),
+    )
+
+    rolling_churn_7d = BashOperator(
+        task_id="rolling_churn_7d",
+        bash_command=BRUIN_EXEC.format(
+            asset="bruin-pipeline/assets/marts/rolling_churn_7d.sql"
+        ),
+    )
+
+    stg_game_events >> [
+        daily_kpis,
+        level_funnel_daily,
+        churn_daily,
+        cohort_retention,
+        churn_by_segment,
+        time_to_churn,
+        rolling_churn_7d,
+    ]

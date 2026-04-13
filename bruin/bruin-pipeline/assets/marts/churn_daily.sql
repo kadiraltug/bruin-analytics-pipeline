@@ -44,7 +44,7 @@ installs AS (
     MIN(event_date::date) AS install_date
   FROM staging.game_events, last_date l
   WHERE event_name = 'user_register'
-    AND event_date::date >= l.max_dt
+    AND event_date::date >= l.max_dt - 30
   GROUP BY 1
 ),
 activity AS (
